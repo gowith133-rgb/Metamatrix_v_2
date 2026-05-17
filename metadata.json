@@ -1,0 +1,8 @@
+{
+  "name": "The Metamatrix",
+  "description": "Sovereign infrastructure for consciousness. Reviving the Metamatrix Network with immersive landing interfaces, autonomous trading daemons, glymphatic flow management, Mythos agent spawning, and the GODMODE Overseer execution protocol.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

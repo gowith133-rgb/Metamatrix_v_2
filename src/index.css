@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-void: #020617;
+  --color-deep: #083344;
+  --color-surface: rgba(8, 47, 73, 0.4);
+  --color-border: rgba(34, 211, 238, 0.2);
+  --color-glow: #22d3ee;
+  --color-pulse: #34d399;
+  --color-warn: #fbbf24;
+  
+  --font-display: 'Syne', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-void text-[#c8e6f0] font-mono min-h-screen overflow-hidden;
+    background: radial-gradient(circle at center, #083344 0%, #020617 70%);
+  }
+}
+
+@layer components {
+  .glass {
+    backdrop-filter: blur(12px);
+    background: rgba(8, 47, 73, 0.4);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    border-radius: 0.5rem;
+  }
+  
+  .glow-text {
+    color: var(--color-glow);
+    filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.6));
+  }
+
+  .terminal-card {
+    backdrop-filter: blur(12px);
+    background: rgba(8, 47, 73, 0.4);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    transition-property: all;
+    transition-duration: 300ms;
+  }
+
+  .terminal-card:hover {
+    background-color: rgba(34, 211, 238, 0.05);
+  }
+
+  .grid-bg {
+    background-image: linear-gradient(var(--color-glow) 1px, transparent 1px), 
+                      linear-gradient(90deg, var(--color-glow) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.05;
+  }
+}

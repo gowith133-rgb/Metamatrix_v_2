@@ -1,0 +1,5 @@
+# Requirements for local pattern recognition
+# Run: pip install -r requirements.txt
+
+# hashlib and re are built-in
+# Add any specialized NLP libraries here if expanded
