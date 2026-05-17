@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "TradingAgent": {
+      "title": "Trading Agent",
+      "description": "An autonomous agent executing trades.",
+      "type": "object",
+      "properties": {
+        "budget": { "type": "number" },
+        "remaining_budget": { "type": "number" },
+        "asset": { "type": "string" },
+        "strategy": { "type": "string" },
+        "risk_level": { "type": "string" },
+        "status": { "type": "string" },
+        "total_profit_loss": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["budget", "asset", "strategy", "risk_level", "status", "created_at"]
+    },
+    "Trade": {
+      "title": "Trade",
+      "description": "An execution record of an asset trade.",
+      "type": "object",
+      "properties": {
+        "agent_id": { "type": "string" },
+        "asset": { "type": "string" },
+        "action": { "type": "string" },
+        "amount": { "type": "number" },
+        "price": { "type": "number" },
+        "confidence": { "type": "number" },
+        "reasoning": { "type": "string" },
+        "executed_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["agent_id", "asset", "action", "amount", "price", "executed_at"]
+    },
+    "RiskStatus": {
+      "title": "Risk Status",
+      "description": "Systemic risk telemetry.",
+      "type": "object",
+      "properties": {
+        "vix": { "type": "number" },
+        "gold_price": { "type": "number" },
+        "btc_premium": { "type": "number" },
+        "brics_volume": { "type": "number" },
+        "composite_score": { "type": "number" },
+        "risk_level": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "NotebookContext": {
+      "title": "Notebook Context",
+      "description": "Manually ingested context from NotebookLM or other sources.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "ingested_at": { "type": "string", "format": "date-time" },
+        "patterns": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "firestore": {
+    "trading_agents": {
+      "path": "trading_agents/{agentId}",
+      "schema": { "$ref": "#/entities/TradingAgent" },
+      "description": "Collections of autonomous trading agents."
+    },
+    "trades": {
+      "path": "trades/{tradeId}",
+      "schema": { "$ref": "#/entities/Trade" },
+      "description": "Historical log of all executed trades."
+    },
+    "risk_history": {
+      "path": "risk_history/{riskId}",
+      "schema": { "$ref": "#/entities/RiskStatus" },
+      "description": "Time-series risk data."
+    },
+    "notebooks": {
+      "path": "notebooks/{notebookId}",
+      "schema": { "$ref": "#/entities/NotebookContext" },
+      "description": "Semantic patterns from external notebooks."
+    }
+  }
+}

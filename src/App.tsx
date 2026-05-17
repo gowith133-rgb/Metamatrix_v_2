@@ -28,12 +28,18 @@ import { VISION, PROTOCOL, HERMETIC_SYSTEM } from "./constants";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+import { usePlaidLink } from 'react-plaid-link';
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+
+// @ts-ignore
+const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID || "sb";
+
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 // --- Types ---
-type Tab = "scan" | "network" | "sanctuary" | "docs" | "terminal" | "sovereignty" | "godmode" | "mythos";
+type Tab = "scan" | "network" | "sanctuary" | "docs" | "terminal" | "sovereignty" | "godmode" | "mythos" | "connectivity";
 
 interface MythosTask {
   id: number;
@@ -170,6 +176,31 @@ const NetworkBackground = () => {
   return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none opacity-40 z-0" />;
 };
 
+// --- Sub-components ---
+const PlaidLinkButton = ({ token, onSuccess }: { token: string; onSuccess: () => void }) => {
+  const { open, ready } = usePlaidLink({
+    token,
+    onSuccess: async (public_token, metadata) => {
+      await fetch("/api/sovereignty/exchange-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_token }),
+      });
+      onSuccess();
+    },
+  });
+
+  return (
+    <button
+      onClick={() => open()}
+      disabled={!ready}
+      className="w-full py-4 bg-glow text-void font-black uppercase tracking-[4px] shadow-[0_0_20px_rgba(34,211,238,0.2)] disabled:opacity-50"
+    >
+      BEGIN SOVEREIGN LINK
+    </button>
+  );
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("scan");
   const [input, setInput] = useState("");
@@ -183,6 +214,8 @@ export default function App() {
   const [godmodeLogs, setGodmodeLogs] = useState<any[]>([]);
   const [mythosTasks, setMythosTasks] = useState<MythosTask[]>([]);
   const [isSpawning, setIsSpawning] = useState(false);
+  const [sovereignStatus, setSovereignStatus] = useState<any>(null);
+  const [plaidToken, setPlaidToken] = useState<string | null>(null);
 
   // Trading State
   const [agents, setAgents] = useState<TradingAgent[]>([]);
@@ -192,23 +225,57 @@ export default function App() {
   const [strategy, setStrategy] = useState("ai_signals");
   const [riskLevel, setRiskLevel] = useState("moderate");
 
+  // NotebookLM State
+  const [notebooks, setNotebooks] = useState<any[]>([]);
+  const [isNoteInput, setIsNoteInput] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+
   useEffect(() => {
-    if (activeTab === "terminal" || activeTab === "sovereignty" || activeTab === "sanctuary" || activeTab === "godmode" || activeTab === "mythos") {
+    const fetchData = () => {
       fetchTradingStatus();
       fetchRiskStatus();
       fetchTelemetry();
       fetchGodmodeLogs();
       fetchMythosTasks();
-      const interval = setInterval(() => {
-        fetchTradingStatus();
-        fetchRiskStatus();
-        fetchTelemetry();
-        fetchGodmodeLogs();
-        fetchMythosTasks();
-      }, 10000);
+      fetchSovereignStatus();
+      fetchNotebooks();
+    };
+
+    if (activeTab === "terminal" || activeTab === "sovereignty" || activeTab === "sanctuary" || activeTab === "godmode" || activeTab === "mythos" || activeTab === "scan") {
+      fetchData();
+      const interval = setInterval(fetchData, 10000);
       return () => clearInterval(interval);
     }
+    if (activeTab === "connectivity") {
+      initPlaid();
+    }
   }, [activeTab]);
+
+  const fetchSovereignStatus = async () => {
+    try {
+      const res = await fetch("/api/sovereignty/status");
+      const data = await res.json();
+      setSovereignStatus(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchNotebooks = async () => {
+    try {
+      const res = await fetch("/api/bridge/notebooks");
+      const data = await res.json();
+      setNotebooks(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const initPlaid = async () => {
+    const res = await fetch("/api/sovereignty/link-token", { method: "POST" });
+    const data = await res.json();
+    setPlaidToken(data.link_token);
+  };
 
   const fetchMythosTasks = async () => {
     try {
@@ -297,8 +364,9 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-screen bg-void flex flex-col font-mono text-text overflow-hidden select-none">
-      <NetworkBackground />
+    <PayPalScriptProvider options={{ clientId: PAYPAL_CLIENT_ID, currency: "USD", intent: "capture" }}>
+      <div className="relative min-h-screen bg-void flex flex-col font-mono text-text overflow-hidden select-none">
+        <NetworkBackground />
       <div className="fixed inset-0 grid-bg pointer-events-none z-0" />
       
       {/* Header */}
@@ -374,43 +442,124 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Analysis Scanner */}
+              {/* Correspondence Engine */}
               <div className="glass p-8 border-l-4 border-l-glow">
                 <div className="flex justify-between items-start mb-8">
                   <div>
                     <h2 className="text-xl font-display font-black text-glow flex items-center gap-3">
-                      <Scan className="w-6 h-6" />
-                      PRINCIPLE SCANNER
+                      <Zap className="w-6 h-6" />
+                      CORRESPONDENCE ENGINE
                     </h2>
-                    <p className="text-xs opacity-50 uppercase tracking-wider font-bold mt-1">Detecting Hermetic Correspondence</p>
+                    <p className="text-xs opacity-50 uppercase tracking-wider font-bold mt-1">NotebookLM Semantic Alignment Active</p>
                   </div>
                   <div className="text-[10px] font-mono opacity-20 uppercase">v4.0.0-omega</div>
                 </div>
 
                 <div className="space-y-6">
-                  <div className="relative">
-                    <textarea 
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder="Input content for systemic pattern recognition..."
-                      className="w-full bg-void/50 border border-glow/20 rounded p-4 text-sm font-mono focus:outline-none focus:border-glow transition-all min-h-[120px] placeholder:opacity-20"
-                    />
-                    <div className="absolute bottom-4 right-4 flex items-center gap-2 opacity-20">
-                      <Zap className="w-3 h-3" />
-                      <span className="text-[8px] uppercase font-black">Entropy Low</span>
+                  {isNoteInput ? (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                      <input 
+                        type="text"
+                        value={noteTitle}
+                        onChange={(e) => setNoteTitle(e.target.value)}
+                        placeholder="Notebook Title (e.g., Q1 Strategic Patterns)"
+                        className="w-full bg-void/50 border border-glow/20 rounded p-4 text-sm font-mono focus:outline-none focus:border-glow transition-all"
+                      />
+                      <textarea 
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="Paste NotebookLM context or notes for semantic bridge..."
+                        className="w-full bg-void/50 border border-glow/20 rounded p-4 text-sm font-mono focus:outline-none focus:border-glow transition-all min-h-[120px]"
+                      />
+                      <div className="flex gap-4">
+                        <button 
+                          onClick={async () => {
+                            if (!input || !noteTitle) return;
+                            setIsScanning(true);
+                            try {
+                              const res = await fetch("/api/bridge/notebooklm", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ title: noteTitle, context: input })
+                              });
+                              await res.json();
+                              setNoteTitle("");
+                              setInput("");
+                              setIsNoteInput(false);
+                              fetchNotebooks();
+                            } finally {
+                              setIsScanning(false);
+                            }
+                          }}
+                          className="flex-1 py-3 bg-glow text-void font-black uppercase tracking-widest text-[10px]"
+                        >
+                          BRIDGE PATTERN
+                        </button>
+                        <button onClick={() => setIsNoteInput(false)} className="px-6 py-3 border border-white/20 text-[10px] font-black uppercase">Cancel</button>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <textarea 
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          placeholder="Input content for systemic pattern recognition..."
+                          className="w-full bg-void/50 border border-glow/20 rounded p-4 text-sm font-mono focus:outline-none focus:border-glow transition-all min-h-[120px] placeholder:opacity-20"
+                        />
+                        <div className="absolute bottom-4 left-4 flex items-center gap-2 opacity-20">
+                          <Zap className="w-3 h-3" />
+                          <span className="text-[8px] uppercase font-black">Entropy Low</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-4">
+                        <button 
+                          onClick={handleScan}
+                          disabled={isScanning || !input}
+                          className={cn(
+                            "flex-1 py-4 bg-glow text-void font-black uppercase tracking-[4px] rounded transition-all shadow-[0_0_30px_rgba(34,211,238,0.2)] hover:shadow-[0_0_50px_rgba(34,211,238,0.4)]",
+                            isScanning && "opacity-50 cursor-not-allowed"
+                          )}
+                        >
+                          {isScanning ? <span className="animate-pulse">SCANNING REALITY...</span> : "EXECUTE RECOGNITION"}
+                        </button>
+                        
+                        <button 
+                          onClick={() => setIsNoteInput(true)}
+                          className="px-6 py-4 border border-glow/40 text-glow text-[10px] font-black uppercase tracking-widest hover:bg-glow/10 transition-all rounded flex items-center gap-2"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                          Ingest Notebook
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Notebook Registry */}
+                  {notebooks.length > 0 && !isNoteInput && (
+                    <div className="pt-8 border-t border-glow/10 space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-[10px] uppercase font-black tracking-widest text-glow/60">Semantic Registry (NotebookLM)</h3>
+                        <div className="text-[8px] font-mono opacity-40 uppercase">Persistence: Firestore</div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {notebooks.map(note => (
+                          <div key={note.id} className="p-4 bg-void/40 border border-glow/10 rounded group hover:border-glow/40 transition-all">
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="text-[11px] font-bold text-text-bright tracking-tight line-clamp-1">{note.title}</span>
+                              <span className="text-[8px] opacity-30 font-mono">{new Date(note.ingested_at?._seconds * 1000 || Date.now()).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {note.patterns?.slice(0, 3).map((p: string) => (
+                                <span key={p} className="text-[7px] uppercase font-black px-1.5 py-0.5 bg-glow/5 border border-glow/20 text-glow/60">{p}</span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  
-                  <button 
-                    onClick={handleScan}
-                    disabled={isScanning || !input}
-                    className={cn(
-                      "w-full py-4 bg-glow text-void font-black uppercase tracking-[4px] rounded transition-all shadow-[0_0_30px_rgba(34,211,238,0.2)] hover:shadow-[0_0_50px_rgba(34,211,238,0.4)]",
-                      isScanning && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {isScanning ? <span className="animate-pulse">SCANNING REALITY...</span> : "EXECUTE RECOGNITION"}
-                  </button>
+                  )}
 
                   <AnimatePresence>
                     {result && (
@@ -801,6 +950,131 @@ export default function App() {
             </motion.div>
           )}
 
+          {activeTab === "connectivity" && (
+            <motion.div 
+              key="connectivity"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8 pb-20"
+            >
+              {/* Connectivity Header */}
+              <div className="flex justify-between items-center bg-glow/5 p-6 border-l-4 border-glow">
+                <div>
+                  <h2 className="text-3xl font-display font-black text-glow tracking-tighter uppercase italic">Sovereign Link</h2>
+                  <p className="text-[10px] uppercase font-black tracking-widest opacity-40">Infrastructure Connectivity Matrix</p>
+                </div>
+                <Zap className="w-12 h-12 text-glow" />
+              </div>
+
+              {/* Status Overview */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="glass p-6 border-t border-glow/20">
+                   <div className="flex justify-between items-center mb-4">
+                    <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Bank Gateway</span>
+                    <span className={cn(
+                      "text-[9px] font-black uppercase px-2 py-1 rounded",
+                      sovereignStatus?.bank === "CONNECTED" ? "bg-pulse text-void" : "bg-warn/20 text-warn"
+                    )}>
+                      {sovereignStatus?.bank || "OFFLINE"}
+                    </span>
+                   </div>
+                   <h3 className="text-xl font-bold mb-4">Plaid Network</h3>
+                   {!sovereignStatus?.bank && plaidToken && (
+                     <PlaidLinkButton token={plaidToken} onSuccess={fetchSovereignStatus} />
+                   )}
+                   {sovereignStatus?.bank === "CONNECTED" && (
+                     <div className="text-xs opacity-60 leading-relaxed italic">
+                       Bank identity successfully linked. Metamatrix now has read/write access to financial sub-layers.
+                     </div>
+                   )}
+                </div>
+
+                <div className="glass p-6 border-t border-glow/20">
+                   <div className="flex justify-between items-center mb-4">
+                    <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Exchange Relay</span>
+                    <span className={cn(
+                      "text-[9px] font-black uppercase px-2 py-1 rounded",
+                      sovereignStatus?.exchange === "CONNECTED" ? "bg-pulse text-void" : "bg-warn/20 text-warn"
+                    )}>
+                      {sovereignStatus?.exchange || "OFFLINE"}
+                    </span>
+                   </div>
+                   <h3 className="text-xl font-bold mb-4">Alpaca Markets</h3>
+                   <div className="text-xs opacity-60 leading-relaxed italic">
+                     {sovereignStatus?.exchange === "CONNECTED" 
+                       ? "Direct market access active. Trading Daemons are operating in LIVE mode."
+                       : "Disconnected. Set ALPACA_API_KEY in environment to enable live market execution."
+                     }
+                   </div>
+                </div>
+              </div>
+
+              {/* PayPal Sovereign Funding */}
+              <div className="glass p-8 border border-pulse/30 bg-pulse/5 flex flex-col items-center space-y-6">
+                <div className="text-center">
+                  <h3 className="text-2xl font-black text-pulse italic uppercase tracking-tighter">Sovereign Funding Vault</h3>
+                  <p className="text-[10px] uppercase font-bold opacity-50 mt-1">Direct System Capitalization via PayPal</p>
+                </div>
+                
+                <div className="w-full max-w-sm">
+                  <PayPalButtons 
+                    style={{ layout: "vertical", color: "blue", shape: "rect", label: "pay" }}
+                    createOrder={async () => {
+                      const res = await fetch("/api/sovereignty/paypal/create-order", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ amount: "50.00" })
+                      });
+                      const data = await res.json();
+                      return data.id;
+                    }}
+                    onApprove={async (data) => {
+                      const res = await fetch("/api/sovereignty/paypal/capture-order", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ orderId: data.orderID })
+                      });
+                      const captureRes = await res.json();
+                      alert(`System Capitalized: $${captureRes.amount} injected successfully.`);
+                      fetchSovereignStatus();
+                    }}
+                  />
+                </div>
+                
+                <div className="text-[9px] uppercase font-black opacity-30 tracking-widest">
+                  Funds are instantly distributed across active Sanctuary Nodes
+                </div>
+              </div>
+
+              {/* Mode Control */}
+              <div className="glass p-8 border border-glow/20 bg-glow/5 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div>
+                  <div className="text-[10px] uppercase font-black tracking-widest opacity-40 mb-1">Current Operational Mode</div>
+                  <div className="text-2xl font-black text-glow tracking-widest">
+                    {sovereignStatus?.mode || "SIMULATED"}
+                  </div>
+                </div>
+                <div className="text-right max-w-sm">
+                  <p className="text-[10px] leading-relaxed opacity-40 uppercase font-bold">
+                    Systemic positioning is currently ${sovereignStatus?.mode === "LIVE_EXECUTION" ? "REAL" : "VIRTUAL"}. 
+                    Live execution carries financial risk. Deployment of capital is ${sovereignStatus?.mode === "LIVE_EXECUTION" ? "ACTIVE" : "PROTECTED"}.
+                  </p>
+                </div>
+              </div>
+
+              {/* Docs Link */}
+              <div className="text-center">
+                <button 
+                  onClick={() => setActiveTab("docs")}
+                  className="text-[10px] uppercase font-black text-glow tracking-[4px] hover:underline"
+                >
+                  View Sovereignty Manifesto
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {activeTab === "terminal" && (
             <motion.div 
               key="terminal"
@@ -878,12 +1152,29 @@ export default function App() {
                           P/L: ${agent.total_profit_loss.toFixed(2)}
                         </div>
                         {agent.status === "active" && (
-                          <button 
-                            onClick={() => stopTradeAgent(agent.id)}
-                            className="px-3 py-1 border border-warn text-warn text-[10px] font-bold uppercase rounded hover:bg-warn/10"
-                          >
-                            Kill
-                          </button>
+                          <div className="flex gap-2">
+                             <button 
+                               onClick={async () => {
+                                 const res = await fetch("/api/trade/fund", {
+                                   method: "POST",
+                                   headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify({ agentId: agent.id, amount: 1000 })
+                                 });
+                                 const data = await res.json();
+                                 alert(data.message);
+                                 fetchTradingStatus();
+                               }}
+                               className="px-3 py-1 border border-pulse text-pulse text-[10px] font-bold uppercase rounded hover:bg-pulse/10"
+                             >
+                               Top Up
+                             </button>
+                             <button 
+                               onClick={() => stopTradeAgent(agent.id)}
+                               className="px-3 py-1 border border-warn text-warn text-[10px] font-bold uppercase rounded hover:bg-warn/10"
+                             >
+                               Kill
+                             </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1045,7 +1336,8 @@ export default function App() {
       {/* Navigation */}
       <nav className="relative z-20 mt-auto bg-void/80 backdrop-blur-xl border-t border-glow/20 p-4 flex justify-around safe-area-bottom">
         {[
-          { id: "scan", icon: Globe, label: "Network" },
+          { id: "scan", icon: Globe, label: "Correspondence" },
+          { id: "connectivity", icon: Zap, label: "Real" },
           { id: "mythos", icon: Brain, label: "Mythos" },
           { id: "terminal", icon: Terminal, label: "Terminal" },
           { id: "sovereignty", icon: ShieldCheck, label: "Positions" },
@@ -1076,5 +1368,6 @@ export default function App() {
         <span>M-MATRIX 4.0.2-A</span>
       </footer>
     </div>
+    </PayPalScriptProvider>
   );
 }

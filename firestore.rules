@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives
+    function isSignedIn() { return request.auth != null; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // Phase 4: Entity Validators
+    function isValidAgent(data) {
+      return data.budget is number && data.budget >= 0
+          && data.asset is string && data.asset.size() <= 10
+          && data.strategy is string && data.strategy.size() <= 1000
+          && data.risk_level in ['conservative', 'moderate', 'aggressive']
+          && data.status is string
+          && data.created_at == request.time;
+    }
+
+    function isValidTrade(data) {
+      return data.agent_id is string && isValidId(data.agent_id)
+          && data.asset is string && data.asset.size() <= 10
+          && data.action in ['BUY', 'SELL', 'HOLD']
+          && data.amount is number && data.amount > 0
+          && data.price is number && data.price >= 0
+          && data.executed_at == request.time;
+    }
+
+    function isValidNotebook(data) {
+      return data.title is string && data.title.size() <= 200
+          && data.content is string && data.content.size() <= 100000
+          && data.ingested_at == request.time;
+    }
+
+    // 1. Trading Agents
+    match /trading_agents/{agentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidAgent(incoming());
+      allow update: if isSignedIn() && (
+        // Action: State Update
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'remaining_budget', 'total_profit_loss']))
+      );
+    }
+
+    // 2. Trades
+    match /trades/{tradeId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidTrade(incoming());
+      // Trades are immutable
+      allow update, delete: if false;
+    }
+
+    // 3. Risk History
+    match /risk_history/{riskId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().timestamp == request.time;
+      allow update, delete: if false;
+    }
+
+    // 4. Notebooks
+    match /notebooks/{notebookId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidNotebook(incoming());
+      allow delete: if isSignedIn();
+    }
+  }
+}

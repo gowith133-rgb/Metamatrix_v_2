@@ -4,11 +4,61 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 import Database from "better-sqlite3";
+import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
+import { createRequire } from "module";
+import admin from "firebase-admin";
+
+const require = createRequire(import.meta.url);
+const paypal = require("@paypal/checkout-server-sdk");
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// --- Firebase Configuration ---
+let firestore: any;
+try {
+  const firebaseConfigFile = path.join(process.cwd(), "firebase-applet-config.json");
+  if (require("fs").existsSync(firebaseConfigFile)) {
+    const firebaseConfig = JSON.parse(require("fs").readFileSync(firebaseConfigFile, "utf8"));
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+    }
+    firestore = admin.firestore(firebaseConfig.firestoreDatabaseId);
+  } else {
+    console.warn("Firebase config not found at", firebaseConfigFile);
+  }
+} catch (err) {
+  console.error("Firebase initialization failed:", err);
+}
+
+// --- PayPal Configuration ---
+let paypalClient: any;
+try {
+  const paypalEnv = new paypal.core.SandboxEnvironment(
+    process.env.PAYPAL_CLIENT_ID || "sb",
+    process.env.PAYPAL_CLIENT_SECRET || "sb"
+  );
+  paypalClient = new paypal.core.PayPalHttpClient(paypalEnv);
+} catch (err) {
+  console.error("PayPal client initialization failed:", err);
+}
+
+// --- Plaid Configuration ---
+const plaidConfig = new Configuration({
+  basePath: PlaidEnvironments[process.env.PLAID_ENV || "sandbox"],
+  baseOptions: {
+    headers: {
+      "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID || "",
+      "PLAID-SECRET": process.env.PLAID_SECRET || "",
+      "Plaid-Version": "2020-09-14",
+    },
+  },
+});
+const plaidClient = new PlaidApi(plaidConfig);
 
 // --- Database Initialization ---
 const db = new Database("metamatrix.db");
@@ -23,6 +73,12 @@ db.exec(`
     status TEXT NOT NULL,
     total_profit_loss REAL DEFAULT 0,
     created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS vault_secrets (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS trades (
@@ -81,6 +137,168 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
 app.use(express.json());
+
+// --- Sovereignty API (Real World Connectivity) ---
+app.post("/api/sovereignty/link-token", async (req, res) => {
+  try {
+    const config = {
+      user: { client_user_id: "metamatrix_sovereign_1" },
+      client_name: "Metamatrix Sanctuary Node",
+      products: [Products.Auth, Products.Transactions],
+      country_codes: [CountryCode.Us],
+      language: "en",
+    };
+    const response = await plaidClient.linkTokenCreate(config);
+    res.json(response.data);
+  } catch (err: any) {
+    console.error('[PLAID] Token error:', err.response?.data || err.message);
+    res.status(500).json({ error: "Sovereign link failed", details: err.response?.data || err.message });
+  }
+});
+
+app.post("/api/sovereignty/exchange-token", async (req, res) => {
+  const { public_token } = req.body;
+  try {
+    const response = await plaidClient.itemPublicTokenExchange({ public_token });
+    const { access_token, item_id } = response.data;
+    
+    // Securely store in Vault
+    db.prepare("INSERT OR REPLACE INTO vault_secrets (key, value, updated_at) VALUES (?, ?, ?)")
+      .run("PLAID_ACCESS_TOKEN", access_token, new Date().toISOString());
+    
+    res.json({ success: true, item_id });
+  } catch (err: any) {
+    res.status(500).json({ error: "Exchange failed" });
+  }
+});
+
+app.get("/api/sovereignty/status", async (req, res) => {
+  const plaidToken = db.prepare("SELECT value FROM vault_secrets WHERE key = 'PLAID_ACCESS_TOKEN'").get() as any;
+  const alpacaKey = process.env.ALPACA_API_KEY;
+  
+  let alpacaStatus = "DISCONNECTED";
+  if (alpacaKey) {
+    try {
+      const alpacaRes = await fetch(`${process.env.ALPACA_BASE_URL}/v2/account`, {
+        headers: {
+          "APCA-API-KEY-ID": alpacaKey,
+          "APCA-API-SECRET-KEY": process.env.ALPACA_SECRET_KEY || ""
+        }
+      });
+      if (alpacaRes.ok) alpacaStatus = "CONNECTED";
+    } catch (e) {
+      alpacaStatus = "ERROR";
+    }
+  }
+
+  res.json({
+    bank: plaidToken ? "CONNECTED" : "DISCONNECTED",
+    exchange: alpacaStatus,
+    paypal: process.env.PAYPAL_CLIENT_ID ? "CONFIGURED" : "OFFLINE",
+    mode: alpacaStatus === "CONNECTED" ? "LIVE_EXECUTION" : "SIMULATED"
+  });
+});
+
+// --- PayPal Endpoints ---
+app.post("/api/sovereignty/paypal/create-order", async (req, res) => {
+  if (!paypalClient) return res.status(500).json({ error: "PayPal client not initialized" });
+  
+  try {
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.prefer("return=representation");
+    request.requestBody({
+      intent: "CAPTURE",
+      purchase_units: [{
+        amount: { currency_code: "USD", value: req.body.amount || "10.00" }
+      }]
+    });
+
+    const order = await paypalClient.execute(request);
+    res.json({ id: order.result.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/sovereignty/paypal/capture-order", async (req, res) => {
+  if (!paypalClient) return res.status(500).json({ error: "PayPal client not initialized" });
+  
+  const { orderId, agentId } = req.body;
+  try {
+    const request = new paypal.orders.OrdersCaptureRequest(orderId);
+    request.requestBody({});
+
+    const capture = await paypalClient.execute(request);
+    const amount = capture.result.purchase_units[0].payments.captures[0].amount.value;
+    
+    if (agentId) {
+      db.prepare("UPDATE trading_agents SET remaining_budget = remaining_budget + ? WHERE id = ?")
+        .run(parseFloat(amount), agentId);
+    }
+
+    db.prepare("INSERT INTO godmode_actions (action, result, severity, timestamp) VALUES (?, ?, ?, ?)")
+      .run("PAYPAL_FUNDING", `Captured $${amount} via ${orderId}`, "BETA", new Date().toISOString());
+
+    res.json({ success: true, amount });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- NotebookLM Semantic Bridge ---
+app.post("/api/bridge/notebooklm", async (req, res) => {
+  const { title, context } = req.body;
+  
+  const prompt = `
+    NOTEBOOKLM SEMANTIC BRIDGE ACTIVE.
+    Source: ${title}
+    Context Length: ${context.length} characters.
+    
+    Objective: Extract hyper-dense semantic patterns for the Correspondence Engine.
+    Look for high-dimensional resonances and "hidden" infrastructure nodes described in the text.
+    
+    Text Segment: ${context.substring(0, 1000)}...
+    
+    Return ONLY JSON: 
+    { 
+      "ingested_patterns": ["string"], 
+      "sovereignty_alignment": number (0-1.0),
+      "notebook_synergy": "string"
+    }
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const strategy = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Parse failure" };
+
+    // Save to Firebase
+    if (firestore) {
+      await firestore.collection("notebooks").add({
+        title: title || "Untitled Pattern",
+        content: context,
+        ingested_at: admin.firestore.FieldValue.serverTimestamp(),
+        patterns: strategy.ingested_patterns || []
+      });
+    }
+
+    res.json({ success: true, strategy });
+  } catch (err) {
+    res.status(500).json({ error: "NotebookLM bridge failed" });
+  }
+});
+
+app.get("/api/bridge/notebooks", async (req, res) => {
+  if (!firestore) return res.json([]);
+  try {
+    const snapshot = await firestore.collection("notebooks").orderBy("ingested_at", "desc").limit(10).get();
+    const notebooks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json(notebooks);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch notebooks" });
+  }
+});
 
 // --- Mythos API ---
 app.get("/api/mythos/tasks", (req, res) => {
@@ -375,8 +593,9 @@ app.post("/api/analyze", async (req, res) => {
 
   try {
     const prompt = `
-      You are the Metamatrix Pattern Recognition Engine. 
+      You are the Metamatrix Correspondence Engine. 
       Analyze the following content and identify which of the 7 Hermetic Principles are present.
+      Check for cross-resonances with recently ingested NotebookLM patterns.
       Return ONLY a JSON object in this format:
       {
         "principles": [
@@ -405,6 +624,20 @@ app.post("/api/trade/start", (req, res) => {
   `).run(budget, budget, asset, strategy, riskLevel, new Date().toISOString());
   
   res.json({ success: true, id: result.lastInsertRowid });
+});
+
+app.post("/api/trade/fund", (req, res) => {
+  const { agentId, amount } = req.body;
+  if (!agentId || !amount) return res.status(400).json({ error: "Missing parameters" });
+
+  try {
+    db.prepare("UPDATE trading_agents SET remaining_budget = remaining_budget + ? WHERE id = ?")
+      .run(amount, agentId);
+    res.json({ success: true, message: `Successfully injected $${amount} simulated capital.` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Funding failed" });
+  }
 });
 
 app.get("/api/trade/status", (req, res) => {
