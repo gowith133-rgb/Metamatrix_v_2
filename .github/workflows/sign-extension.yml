@@ -1,0 +1,41 @@
+name: Nexus Oracle Secure Signing
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  sign-and-verify:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install model-signing
+        run: pip install model-signing[otel]
+
+      - name: Generate Sigstore Bundle
+        run: |
+          python -m model_signing sign sigstore \
+            --signature extension_bundle.sigstore.json \
+            ./dist/
+
+      - name: Verify Signature and Rekor Inclusion
+        run: |
+          DYNAMIC_IDENTITY="${{ github.server_url }}/${{ github.repository }}/.github/workflows/sign-extension.yml@${{ github.ref }}"
+          echo "Verifying against Identity: $DYNAMIC_IDENTITY"
+          python -m model_signing verify sigstore \
+            --identity "$DYNAMIC_IDENTITY" \
+            --oidc_provider "https://token.actions.githubusercontent.com" \
+            --signature extension_bundle.sigstore.json \
+            ./dist/

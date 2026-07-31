@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import Database from "better-sqlite3";
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
 import { createRequire } from "module";
+import admin from "firebase-admin";
 
 const require = createRequire(import.meta.url);
 const paypal = require("@paypal/checkout-server-sdk");
@@ -15,10 +16,24 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// --- Local SQLite Configuration ---
-const notebookDb = new Database("metamatrix.db");
-notebookDb.exec(`CREATE TABLE IF NOT EXISTS notebooks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, strategy_data TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
-console.log("Local SQLite database initialized off-grid.");
+// --- Firebase Configuration ---
+let firestore: any;
+try {
+  const firebaseConfigFile = path.join(process.cwd(), "firebase-applet-config.json");
+  if (require("fs").existsSync(firebaseConfigFile)) {
+    const firebaseConfig = JSON.parse(require("fs").readFileSync(firebaseConfigFile, "utf8"));
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+    }
+    firestore = admin.firestore(firebaseConfig.firestoreDatabaseId);
+  } else {
+    console.warn("Firebase config not found at", firebaseConfigFile);
+  }
+} catch (err) {
+  console.error("Firebase initialization failed:", err);
+}
 
 // --- PayPal Configuration ---
 let paypalClient: any;
@@ -258,13 +273,6 @@ app.post("/api/bridge/notebooklm", async (req, res) => {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const strategy = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Parse failure" };
 
-// Save to Local SQLite
-try {
-    const insertPattern = notebookDb.prepare("INSERT INTO notebooks (title, strategy_data) VALUES (?, ?)");
-    insertPattern.run(title || "Untitled Pattern", JSON.stringify(strategy));
-    console.log(`[+] Saved locally: ${title || "Untitled Pattern"}`);
-} catch (err) { console.error("Local database write failed:", err); }
-const firestore = false; // Bypasses old Firebase
     // Save to Firebase
     if (firestore) {
       await firestore.collection("notebooks").add({
