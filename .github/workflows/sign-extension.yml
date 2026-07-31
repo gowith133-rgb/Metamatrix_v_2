@@ -24,11 +24,17 @@ jobs:
       - name: Install model-signing
         run: pip install model-signing[otel]
 
+      - name: Archive Extension Assets
+        run: |
+          cd dist
+          zip -r ../nexus-oracle.zip ./*
+          cd ..
+
       - name: Generate Sigstore Bundle
         run: |
           python -m model_signing sign sigstore \
             --signature extension_bundle.sigstore.json \
-            ./dist/
+            nexus-oracle.zip
 
       - name: Verify Signature and Rekor Inclusion
         run: |
@@ -38,4 +44,4 @@ jobs:
             --identity "$DYNAMIC_IDENTITY" \
             --oidc_provider "https://token.actions.githubusercontent.com" \
             --signature extension_bundle.sigstore.json \
-            ./dist/
+            nexus-oracle.zip
