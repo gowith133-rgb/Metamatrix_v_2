@@ -1,0 +1,62 @@
+:root {
+    --bg-dark: #0a0a0c;
+    --matrix-green: #00ff41;
+    --alert-red: #ff3333;
+    --text-dim: #888888;
+}
+
+body {
+    width: 380px;
+    margin: 0;
+    padding: 15px;
+    background-color: var(--bg-dark);
+    color: var(--matrix-green);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    border: 1px solid #333;
+}
+
+.container { display: flex; flex-direction: column; gap: 15px; }
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--matrix-green);
+    padding-bottom: 8px;
+}
+
+.title { font-weight: bold; font-size: 14px; letter-spacing: 1px; }
+
+.status-indicator { display: flex; align-items: center; gap: 5px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-dot.green { background-color: var(--matrix-green); box-shadow: 0 0 5px var(--matrix-green); }
+.status-dot.red { background-color: var(--alert-red); box-shadow: 0 0 5px var(--alert-red); }
+
+.panel-label {
+    color: var(--text-dim);
+    font-size: 10px;
+    margin-bottom: 5px;
+}
+
+.security-panel {
+    background: #111;
+    padding: 10px;
+    border-left: 2px solid var(--matrix-green);
+}
+
+.sigstore-status { display: flex; justify-content: space-between; }
+.verified { color: var(--matrix-green); font-weight: bold; }
+.compromised { color: var(--alert-red); font-weight: bold; animation: blink 1s infinite; }
+
+.terminal {
+    background: #000;
+    padding: 10px;
+    height: 150px;
+    overflow-y: auto;
+    border: 1px solid #222;
+}
+
+.line { margin-bottom: 3px; word-wrap: break-word; }
+
+@keyframes blink { 50% { opacity: 0; } }

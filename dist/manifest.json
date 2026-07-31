@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Nexus Oracle",
+  "version": "1.0.2",
+  "description": "Metamatrix Sovereign Intelligence Feed & Cryptographic Validator",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["storage", "alarms"]
+}

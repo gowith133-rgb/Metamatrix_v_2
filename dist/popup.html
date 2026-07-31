@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="title">NEXUS ORACLE // METAMATRIX</div>
+            <div class="status-indicator">
+                <span id="sync-status" class="status-dot green"></span>
+                <span class="status-text">NODE SYNCED</span>
+            </div>
+        </header>
+        
+        <div class="security-panel">
+            <div class="panel-label">INTEGRITY CHECK</div>
+            <div class="sigstore-status">
+                <span>SIGSTORE VERIFICATION:</span>
+                <span id="crypto-status" class="verified">[ VALID ]</span>
+            </div>
+        </div>
+
+        <div class="console-panel">
+            <div class="panel-label">LIVE TELEMETRY</div>
+            <div id="terminal-output" class="terminal">
+                <div class="line">> Initializing sovereign cortex...</div>
+                <div class="line">> Awaiting local oracle payload...</div>
+            </div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
